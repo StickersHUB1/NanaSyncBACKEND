@@ -6,7 +6,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://NanaSyncCEO:fgCXwIDCLLIxvFsb@nanasync.jfh0v8m.mongodb.net/nanasync?retryWrites=true&w=majority&appName=NanaSync&tls=true';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://NanaSyncCEO:fgCXwIDCLLIxvFsb@nanasync.jfh0v8m.mongodb.net/NanaSync?retryWrites=true&w=majority&appName=NanaSync&tls=true';
 
 app.use(cors({
   origin: ['https://stickershub1.github.io', 'http://localhost:8080']
@@ -18,12 +18,11 @@ async function connectDB() {
   try {
     const client = new MongoClient(MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,
-      tls: true,
-      tlsCAFile: undefined // Depuración: dejar como undefined por ahora
+      tls: true
     });
     console.log('Intentando conectar a:', MONGODB_URI);
     await client.connect();
-    db = client.db('nanasync');
+    db = client.db('NanaSync'); // Cambiado a 'NanaSync' para coincidir con el nombre real
     console.log('🟢 Conectado a MongoDB');
   } catch (err) {
     console.error('Error conectando a MongoDB:', err.message, err.stack);
