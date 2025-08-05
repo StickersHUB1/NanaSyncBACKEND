@@ -18,7 +18,7 @@ app.use(bodyParser.json());
 let db;
 async function connectDB() {
   try {
-    const client = new MongoClient(MONGODB_URI, { useUnifiedTopology: true });
+    const client = new MongoClient(MONGODB_URI);
     await client.connect();
     db = client.db('nanasync');
     console.log('🟢 Conectado a MongoDB');
@@ -28,7 +28,14 @@ async function connectDB() {
   }
 }
 
-connectDB();
+// Iniciar servidor solo después de conectar
+async function startServer() {
+  await connectDB();
+  await initializeDB();
+  app.listen(PORT, () => {
+    console.log(`🟢 NanaSync API corriendo en http://localhost:${PORT}`);
+  });
+}
 
 // Datos iniciales
 const empleadosDefault = [
@@ -55,6 +62,9 @@ const empleadosDefault = [
 ];
 
 async function initializeDB() {
+  if (!db) {
+    throw new Error('Base de datos no inicializada');
+  }
   const empleados = db.collection('empleados');
   const count = await empleados.countDocuments();
   if (count === 0) {
@@ -64,6 +74,9 @@ async function initializeDB() {
 }
 
 app.post('/api/login', async (req, res) => {
+  if (!db) {
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
   const { id, password } = req.body;
   if (!id || !password) {
     return res.status(400).json({ error: 'Faltan credenciales' });
@@ -80,6 +93,9 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', async (req, res) => {
+  if (!db) {
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
   const { id } = req.body;
   const empleados = db.collection('empleados');
   const empleado = await empleados.findOne({ id });
@@ -90,6 +106,9 @@ app.post('/api/logout', async (req, res) => {
 });
 
 app.post('/api/empleados', async (req, res) => {
+  if (!db) {
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
   const { nombre, puesto, horario } = req.body;
 
   if (!nombre || !puesto || !horario) {
@@ -112,12 +131,18 @@ app.post('/api/empleados', async (req, res) => {
 });
 
 app.get('/api/empleados', async (req, res) => {
+  if (!db) {
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
   const empleados = db.collection('empleados');
   const lista = await empleados.find().toArray();
   res.json(lista);
 });
 
 app.post('/api/vincular', async (req, res) => {
+  if (!db) {
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
   const { idEmpleado, nombreDispositivo } = req.body;
 
   if (!idEmpleado || !nombreDispositivo) {
@@ -143,12 +168,12 @@ app.post('/api/vincular', async (req, res) => {
 });
 
 app.get('/api/dispositivos', async (req, res) => {
+  if (!db) {
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
   const dispositivos = db.collection('dispositivos');
   const lista = await dispositivos.find().toArray();
   res.json(lista);
 });
 
-app.listen(PORT, async () => {
-  await initializeDB();
-  console.log(`🟢 NanaSync API corriendo en http://localhost:${PORT}`);
-});
+startServer().catch(err => console.error('Error al iniciar el servidor:', err));
