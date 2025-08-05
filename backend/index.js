@@ -23,18 +23,23 @@ async function connectDB() {
     db = client.db('nanasync');
     console.log('🟢 Conectado a MongoDB');
   } catch (err) {
-    console.error('Error conectando a MongoDB:', err);
-    process.exit(1);
+    console.error('Error conectando a MongoDB:', err.message);
+    throw err; // Propagar el error para manejarlo en startServer
   }
 }
 
 // Iniciar servidor solo después de conectar
 async function startServer() {
-  await connectDB();
-  await initializeDB();
-  app.listen(PORT, () => {
-    console.log(`🟢 NanaSync API corriendo en http://localhost:${PORT}`);
-  });
+  try {
+    await connectDB();
+    await initializeDB();
+    app.listen(PORT, () => {
+      console.log(`🟢 NanaSync API corriendo en puerto ${PORT}`);
+    });
+  } catch (err) {
+    console.error('Error al iniciar el servidor:', err.message);
+    process.exit(1);
+  }
 }
 
 // Datos iniciales
@@ -176,4 +181,4 @@ app.get('/api/dispositivos', async (req, res) => {
   res.json(lista);
 });
 
-startServer().catch(err => console.error('Error al iniciar el servidor:', err));
+startServer().catch(err => console.error('Error al iniciar el servidor:', err.message));
