@@ -1,155 +1,91 @@
-const express = require('express');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-const { MongoClient } = require('mongodb');
-const bcrypt = require('bcrypt');
-require('dotenv').config();
+// backend/index.js
+
+const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const { MongoClient, ObjectId } = require("mongodb");
+require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 10000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://...';
+const MONGO_URI = process.env.MONGO_URI;
 
-// ✅ CORS FIJO (GitHub + local)
-const ALLOWED_ORIGINS = ['https://stickershub1.github.io', 'http://localhost:8080'];
+let db;
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Bloqueado por CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
-}));
-
-app.options('*', cors()); // 🔧 permite preflight
+// Middleware CORS manual (para GitHub Pages)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "https://stickershub1.github.io");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
+});
 
 app.use(bodyParser.json());
 
-let db;
-async function connectDB() {
-  try {
-    const client = new MongoClient(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-      tls: true
-    });
-    await client.connect();
-    db = client.db('NanaSync');
-    console.log('🟢 Conexión a MongoDB exitosa');
-  } catch (err) {
-    console.error('❌ Error conectando a MongoDB:', err.message, err.stack);
-    throw err;
-  }
-}
-
-async function startServer() {
-  try {
-    await connectDB();
+// Conexión a MongoDB
+MongoClient.connect(MONGO_URI)
+  .then((client) => {
+    db = client.db();
+    console.log("🟢 Conexión a MongoDB exitosa");
     app.listen(PORT, () => {
       console.log(`🟢 NanaSync API corriendo en puerto ${PORT}`);
     });
-  } catch (err) {
-    console.error('❌ Error al iniciar el servidor:', err.message);
-    process.exit(1);
-  }
-}
+  })
+  .catch((err) => {
+    console.error("❌ Error al conectar con MongoDB:", err);
+  });
 
-// === ENDPOINT: Registrar empresa ===
-app.post('/api/empresas', async (req, res) => {
-  console.log('📥 POST /api/empresas');
+/* === ENDPOINTS === */
 
-  if (!db) return res.status(500).json({ error: 'DB no disponible' });
-
+// Registro de empresa
+app.post("/api/empresas", async (req, res) => {
   const { nombre, email, password } = req.body;
+  console.log("📥 Solicitud de registro recibida:", req.body);
+
   if (!nombre || !email || !password) {
-    return res.status(400).json({ error: 'Faltan datos' });
+    return res.status(400).json({ error: "Faltan campos obligatorios." });
   }
 
-  const empresas = db.collection('empresas');
-  const existente = await empresas.findOne({ email });
-  if (existente) {
-    return res.status(409).json({ error: 'Empresa ya registrada' });
+  try {
+    const empresaExistente = await db.collection("empresas").findOne({ email });
+    if (empresaExistente) {
+      return res.status(409).json({ error: "La empresa ya está registrada." });
+    }
+
+    const nuevaEmpresa = {
+      nombre,
+      email,
+      password, // ⚠️ En producción: aplicar hash con bcrypt
+      creadoEn: new Date().toISOString()
+    };
+
+    const resultado = await db.collection("empresas").insertOne(nuevaEmpresa);
+    res.status(201).json({ mensaje: "Empresa registrada con éxito", id: resultado.insertedId });
+  } catch (err) {
+    console.error("❌ Error en /api/empresas:", err);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
+
+// Crear empleado
+app.post("/api/empleados", async (req, res) => {
+  const datos = req.body;
+  console.log("📥 Alta de nuevo empleado:", datos);
+
+  if (!datos || !datos.empresaId || !datos.nombre) {
+    return res.status(400).json({ error: "Datos incompletos." });
   }
 
-  const hashedPassword = await bcrypt.hash(password, 12);
-  const nuevaEmpresa = {
-    nombre,
-    email,
-    password: hashedPassword,
-    fechaRegistro: new Date()
-  };
+  try {
+    const resultado = await db.collection("empleados").insertOne({
+      ...datos,
+      creadoEn: new Date().toISOString()
+    });
 
-  await empresas.insertOne(nuevaEmpresa);
-  console.log(`✅ Empresa registrada: ${email}`);
-  res.status(201).json({ mensaje: 'Empresa registrada correctamente' });
-});
-
-// === ENDPOINT: Añadir empleado ===
-app.post('/api/empleados', async (req, res) => {
-  console.log('📥 POST /api/empleados');
-
-  if (!db) return res.status(500).json({ error: 'DB no disponible' });
-
-  const {
-    empresaId, nombre, edad, puesto, rango,
-    horario = {}, rol = "empleado"
-  } = req.body;
-
-  if (!empresaId || !nombre || !edad || !puesto || !rango || !horario.entrada || !horario.salida) {
-    return res.status(400).json({ error: 'Faltan datos del empleado' });
+    res.status(201).json({ mensaje: "Empleado añadido", id: resultado.insertedId });
+  } catch (err) {
+    console.error("❌ Error en /api/empleados:", err);
+    res.status(500).json({ error: "Error interno del servidor" });
   }
-
-  const nuevoEmpleado = {
-    empresaId,
-    nombre,
-    edad,
-    puesto,
-    rango,
-    horario,
-    rol,
-    estadoConexion: "inactivo",
-    fichado: false,
-    ultimoFichaje: new Date()
-  };
-
-  await db.collection('empleados').insertOne(nuevoEmpleado);
-  console.log(`✅ Empleado añadido: ${nombre}`);
-  res.status(201).json({ mensaje: 'Empleado creado', empleado: nuevoEmpleado });
 });
-
-// === ENDPOINT: Ver empleados ===
-app.get('/api/empleados', async (req, res) => {
-  console.log('📥 GET /api/empleados');
-
-  if (!db) return res.status(500).json({ error: 'DB no disponible' });
-  const lista = await db.collection('empleados').find().toArray();
-  res.json(lista);
-});
-
-// === ENDPOINT: Registrar fichaje ===
-app.post('/api/fichajes', async (req, res) => {
-  console.log('📥 POST /api/fichajes');
-
-  if (!db) return res.status(500).json({ error: 'DB no disponible' });
-
-  const { empleadoId, empresaId, tipo, estadoAsignado } = req.body;
-  if (!empleadoId || !empresaId || !tipo || !estadoAsignado) {
-    return res.status(400).json({ error: 'Faltan datos del fichaje' });
-  }
-
-  const fichaje = {
-    empleadoId,
-    empresaId,
-    tipo,
-    timestamp: new Date(),
-    estadoAsignado
-  };
-
-  await db.collection('fichajes').insertOne(fichaje);
-  console.log(`✅ Fichaje registrado para ID: ${empleadoId}`);
-  res.status(201).json({ mensaje: 'Fichaje registrado', fichaje });
-});
-
-startServer();
