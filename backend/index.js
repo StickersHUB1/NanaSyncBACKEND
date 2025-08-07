@@ -9,11 +9,23 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://...';
 
+// ✅ CORS FIJO (GitHub + local)
+const ALLOWED_ORIGINS = ['https://stickershub1.github.io', 'http://localhost:8080'];
+
 app.use(cors({
-  origin: ['https://stickershub1.github.io', 'http://localhost:8080'],
-  methods: ['GET', 'POST'],
-  credentials: true
+  origin: function (origin, callback) {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado por CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
 }));
+
+app.options('*', cors()); // 🔧 permite preflight
+
 app.use(bodyParser.json());
 
 let db;
@@ -44,31 +56,24 @@ async function startServer() {
   }
 }
 
-// ==========================
-// === ENDPOINTS API REST ===
-// ==========================
-
-// 🚀 REGISTRO DE EMPRESA
+// === ENDPOINT: Registrar empresa ===
 app.post('/api/empresas', async (req, res) => {
-  console.log('📥 Registro empresa recibido:', req.body);
+  console.log('📥 POST /api/empresas');
 
   if (!db) return res.status(500).json({ error: 'DB no disponible' });
 
   const { nombre, email, password } = req.body;
   if (!nombre || !email || !password) {
-    console.warn('⚠️ Faltan datos para registro de empresa');
     return res.status(400).json({ error: 'Faltan datos' });
   }
 
   const empresas = db.collection('empresas');
   const existente = await empresas.findOne({ email });
   if (existente) {
-    console.warn('🚫 Empresa ya registrada:', email);
     return res.status(409).json({ error: 'Empresa ya registrada' });
   }
 
   const hashedPassword = await bcrypt.hash(password, 12);
-
   const nuevaEmpresa = {
     nombre,
     email,
@@ -77,13 +82,13 @@ app.post('/api/empresas', async (req, res) => {
   };
 
   await empresas.insertOne(nuevaEmpresa);
-  console.log('✅ Empresa registrada con éxito:', nombre);
+  console.log(`✅ Empresa registrada: ${email}`);
   res.status(201).json({ mensaje: 'Empresa registrada correctamente' });
 });
 
-// ➕ AÑADIR EMPLEADO
+// === ENDPOINT: Añadir empleado ===
 app.post('/api/empleados', async (req, res) => {
-  console.log('📥 Añadir empleado recibido:', req.body);
+  console.log('📥 POST /api/empleados');
 
   if (!db) return res.status(500).json({ error: 'DB no disponible' });
 
@@ -93,7 +98,6 @@ app.post('/api/empleados', async (req, res) => {
   } = req.body;
 
   if (!empresaId || !nombre || !edad || !puesto || !rango || !horario.entrada || !horario.salida) {
-    console.warn('⚠️ Faltan datos del empleado');
     return res.status(400).json({ error: 'Faltan datos del empleado' });
   }
 
@@ -111,29 +115,27 @@ app.post('/api/empleados', async (req, res) => {
   };
 
   await db.collection('empleados').insertOne(nuevoEmpleado);
-  console.log('✅ Empleado añadido:', nombre);
+  console.log(`✅ Empleado añadido: ${nombre}`);
   res.status(201).json({ mensaje: 'Empleado creado', empleado: nuevoEmpleado });
 });
 
-// 📄 LISTADO DE EMPLEADOS
+// === ENDPOINT: Ver empleados ===
 app.get('/api/empleados', async (req, res) => {
-  console.log('📤 Petición GET empleados');
+  console.log('📥 GET /api/empleados');
 
   if (!db) return res.status(500).json({ error: 'DB no disponible' });
-
   const lista = await db.collection('empleados').find().toArray();
   res.json(lista);
 });
 
-// 🕐 REGISTRAR FICHAJE
+// === ENDPOINT: Registrar fichaje ===
 app.post('/api/fichajes', async (req, res) => {
-  console.log('📥 Fichaje recibido:', req.body);
+  console.log('📥 POST /api/fichajes');
 
   if (!db) return res.status(500).json({ error: 'DB no disponible' });
 
   const { empleadoId, empresaId, tipo, estadoAsignado } = req.body;
   if (!empleadoId || !empresaId || !tipo || !estadoAsignado) {
-    console.warn('⚠️ Faltan datos del fichaje');
     return res.status(400).json({ error: 'Faltan datos del fichaje' });
   }
 
@@ -146,7 +148,7 @@ app.post('/api/fichajes', async (req, res) => {
   };
 
   await db.collection('fichajes').insertOne(fichaje);
-  console.log('✅ Fichaje registrado:', empleadoId, tipo);
+  console.log(`✅ Fichaje registrado para ID: ${empleadoId}`);
   res.status(201).json({ mensaje: 'Fichaje registrado', fichaje });
 });
 
