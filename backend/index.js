@@ -1,91 +1,78 @@
-// backend/index.js
+// ✅ backend/index.js (código completo con endpoint /api/login-empresa)
 
 const express = require("express");
+const app = express();
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const bcrypt = require("bcrypt");
 const { MongoClient, ObjectId } = require("mongodb");
 require("dotenv").config();
 
-const app = express();
-const PORT = process.env.PORT || 10000;
-const MONGO_URI = process.env.MONGO_URI;
-
-let db;
-
-// Middleware CORS manual (para GitHub Pages)
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "https://stickershub1.github.io");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") return res.sendStatus(200);
-  next();
-});
-
+app.use(cors());
 app.use(bodyParser.json());
 
-// Conexión a MongoDB
-MongoClient.connect(MONGO_URI)
-  .then((client) => {
-    db = client.db();
-    console.log("🟢 Conexión a MongoDB exitosa");
-    app.listen(PORT, () => {
-      console.log(`🟢 NanaSync API corriendo en puerto ${PORT}`);
-    });
-  })
-  .catch((err) => {
-    console.error("❌ Error al conectar con MongoDB:", err);
-  });
+const uri = process.env.MONGODB_URI;
+const client = new MongoClient(uri);
+let db;
 
-/* === ENDPOINTS === */
+client.connect().then(() => {
+  db = client.db();
+  console.log("🟢 Conexión a MongoDB exitosa");
+
+  const port = process.env.PORT || 10000;
+  app.listen(port, () => {
+    console.log(`🟢 NanaSync API corriendo en puerto ${port}`);
+  });
+});
+
+// === ENDPOINTS PRINCIPALES ===
 
 // Registro de empresa
 app.post("/api/empresas", async (req, res) => {
   const { nombre, email, password } = req.body;
-  console.log("📥 Solicitud de registro recibida:", req.body);
-
   if (!nombre || !email || !password) {
-    return res.status(400).json({ error: "Faltan campos obligatorios." });
+    return res.status(400).json({ error: "Todos los campos son obligatorios" });
   }
-
   try {
-    const empresaExistente = await db.collection("empresas").findOne({ email });
-    if (empresaExistente) {
-      return res.status(409).json({ error: "La empresa ya está registrada." });
+    const existente = await db.collection("empresas").findOne({ email });
+    if (existente) {
+      return res.status(400).json({ error: "El email ya está registrado" });
     }
-
-    const nuevaEmpresa = {
-      nombre,
-      email,
-      password, // ⚠️ En producción: aplicar hash con bcrypt
-      creadoEn: new Date().toISOString()
-    };
-
-    const resultado = await db.collection("empresas").insertOne(nuevaEmpresa);
-    res.status(201).json({ mensaje: "Empresa registrada con éxito", id: resultado.insertedId });
+    const hash = await bcrypt.hash(password, 10);
+    const resultado = await db.collection("empresas").insertOne({ nombre, email, password: hash });
+    res.json({ _id: resultado.insertedId, nombre, email });
   } catch (err) {
-    console.error("❌ Error en /api/empresas:", err);
+    console.error("Error registrando empresa:", err);
     res.status(500).json({ error: "Error interno del servidor" });
   }
 });
 
-// Crear empleado
-app.post("/api/empleados", async (req, res) => {
-  const datos = req.body;
-  console.log("📥 Alta de nuevo empleado:", datos);
+// Login de empresa
+app.post("/api/login-empresa", async (req, res) => {
+  const { email, password } = req.body;
 
-  if (!datos || !datos.empresaId || !datos.nombre) {
-    return res.status(400).json({ error: "Datos incompletos." });
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email y contraseña requeridos" });
   }
 
   try {
-    const resultado = await db.collection("empleados").insertOne({
-      ...datos,
-      creadoEn: new Date().toISOString()
-    });
+    const empresa = await db.collection("empresas").findOne({ email });
+    if (!empresa) {
+      return res.status(401).json({ error: "Credenciales inválidas" });
+    }
 
-    res.status(201).json({ mensaje: "Empleado añadido", id: resultado.insertedId });
+    const passwordCorrecta = await bcrypt.compare(password, empresa.password);
+    if (!passwordCorrecta) {
+      return res.status(401).json({ error: "Credenciales inválidas" });
+    }
+
+    res.json({
+      _id: empresa._id,
+      nombre: empresa.nombre,
+      email: empresa.email
+    });
   } catch (err) {
-    console.error("❌ Error en /api/empleados:", err);
-    res.status(500).json({ error: "Error interno del servidor" });
+    console.error("Error al intentar loguear empresa:", err);
+    res.status(500).json({ error: "Error en el servidor" });
   }
 });
