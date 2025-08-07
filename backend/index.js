@@ -2,15 +2,19 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const { MongoClient } = require('mongodb');
+const bcrypt = require('bcrypt');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 10000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://NanaSyncCEO:fgCXwIDCLLIxvFsb@nanasync.jfh0v8m.mongodb.net/NanaSync?retryWrites=true&w=majority&appName=NanaSync&tls=true';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://...';
 
 app.use(cors({
-  origin: ['https://stickershub1.github.io', 'http://localhost:8080']
+  origin: ['https://stickershub1.github.io', 'http://localhost:8080'],
+  methods: ['GET', 'POST'],
+  credentials: true
 }));
+
 app.use(bodyParser.json());
 
 let db;
@@ -32,7 +36,6 @@ async function connectDB() {
 async function startServer() {
   try {
     await connectDB();
-    await initializeDB();
     app.listen(PORT, () => {
       console.log(`🟢 NanaSync API corriendo en puerto ${PORT}`);
     });
@@ -42,103 +45,8 @@ async function startServer() {
   }
 }
 
-const empleadosDefault = [
-  { id: '1001', password: 'nata123', nombre: 'Lidia González', puesto: 'Atención al Cliente', horario: '09:00 – 17:00', rol: 'empleado', estado: 'inactivo', vinculado: false },
-  { id: 'admin01', password: 'admin123', nombre: 'Sandra Morales', puesto: 'Jefe de Operaciones', horario: '08:00 – 16:00', rol: 'admin', estado: 'inactivo', vinculado: false }
-];
-
-async function initializeDB() {
-  if (!db) throw new Error('Base de datos no inicializada');
-  const empleados = db.collection('empleados');
-  const count = await empleados.countDocuments();
-  if (count === 0) {
-    await empleados.insertMany(empleadosDefault);
-    console.log('Datos iniciales insertados en MongoDB:', empleadosDefault);
-  }
-}
-
-// === ENDPOINTS API ===
-
-app.post('/api/login', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Error interno del servidor' });
-  const { id, password } = req.body;
-  if (!id || !password) return res.status(400).json({ error: 'Faltan credenciales' });
-
-  const empleados = db.collection('empleados');
-  const empleado = await empleados.findOne({ id, password });
-  if (!empleado) return res.status(401).json({ error: 'Credenciales incorrectas' });
-
-  await empleados.updateOne({ id }, { $set: { estado: 'activo' } });
-  res.json(empleado);
-});
-
-app.post('/api/logout', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Error interno del servidor' });
-  const { id } = req.body;
-  const empleados = db.collection('empleados');
-  const empleado = await empleados.findOne({ id });
-  if (empleado) {
-    await empleados.updateOne({ id }, { $set: { estado: 'inactivo' } });
-  }
-  res.json({ success: true });
-});
-
-app.post('/api/empleados', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'DB no disponible' });
-
-  const { nombre, puesto, horario } = req.body;
-  if (!nombre || !puesto || !horario) return res.status(400).json({ error: 'Faltan datos del empleado' });
-
-  const empleados = db.collection('empleados');
-  const nuevo = {
-    id: String(Date.now()),
-    nombre,
-    puesto,
-    horario,
-    rol: 'empleado',
-    estado: 'inactivo',
-    vinculado: false
-  };
-  await empleados.insertOne(nuevo);
-  res.status(201).json(nuevo);
-});
-
-app.get('/api/empleados', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'DB no disponible' });
-  const empleados = db.collection('empleados');
-  const lista = await empleados.find().toArray();
-  res.json(lista);
-});
-
-app.post('/api/vincular', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'DB no disponible' });
-  const { idEmpleado, nombreDispositivo } = req.body;
-  if (!idEmpleado || !nombreDispositivo) return res.status(400).json({ error: 'Faltan datos para vincular' });
-
-  const empleados = db.collection('empleados');
-  const emp = await empleados.findOne({ id: idEmpleado });
-  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
-
-  await empleados.updateOne({ id: idEmpleado }, { $set: { vinculado: true } });
-  const dispositivos = db.collection('dispositivos');
-  await dispositivos.insertOne({
-    idEmpleado,
-    nombreDispositivo,
-    activo: true,
-    timestamp: new Date().toISOString()
-  });
-  res.json({ success: true, mensaje: 'Dispositivo vinculado correctamente' });
-});
-
-app.get('/api/dispositivos', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'DB no disponible' });
-  const dispositivos = db.collection('dispositivos');
-  const lista = await dispositivos.find().toArray();
-  res.json(lista);
-});
-
+// === ENDPOINT: Registrar empresa ===
 app.post('/api/empresas', async (req, res) => {
-  console.log('➡️ POST /api/empresas', req.body);
   if (!db) return res.status(500).json({ error: 'DB no disponible' });
 
   const { nombre, email, password } = req.body;
@@ -152,7 +60,6 @@ app.post('/api/empresas', async (req, res) => {
     return res.status(409).json({ error: 'Empresa ya registrada' });
   }
 
-  const bcrypt = require('bcrypt');
   const hashedPassword = await bcrypt.hash(password, 12);
 
   const nuevaEmpresa = {
@@ -163,8 +70,65 @@ app.post('/api/empresas', async (req, res) => {
   };
 
   await empresas.insertOne(nuevaEmpresa);
-  console.log('✅ Empresa registrada:', nuevaEmpresa);
   res.status(201).json({ mensaje: 'Empresa registrada correctamente' });
 });
 
-startServer().catch(err => console.error('Error fatal al iniciar el servidor:', err.message));
+// === ENDPOINT: Añadir empleado ===
+app.post('/api/empleados', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'DB no disponible' });
+
+  const {
+    empresaId, nombre, edad, puesto, rango,
+    horario = {}, rol = "empleado"
+  } = req.body;
+
+  if (!empresaId || !nombre || !edad || !puesto || !rango || !horario.entrada || !horario.salida) {
+    return res.status(400).json({ error: 'Faltan datos del empleado' });
+  }
+
+  const nuevoEmpleado = {
+    empresaId,
+    nombre,
+    edad,
+    puesto,
+    rango,
+    horario,
+    rol,
+    estadoConexion: "inactivo",
+    fichado: false,
+    ultimoFichaje: new Date()
+  };
+
+  await db.collection('empleados').insertOne(nuevoEmpleado);
+  res.status(201).json({ mensaje: 'Empleado creado', empleado: nuevoEmpleado });
+});
+
+// === ENDPOINT: Ver empleados ===
+app.get('/api/empleados', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'DB no disponible' });
+  const lista = await db.collection('empleados').find().toArray();
+  res.json(lista);
+});
+
+// === ENDPOINT: Registrar fichaje ===
+app.post('/api/fichajes', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'DB no disponible' });
+
+  const { empleadoId, empresaId, tipo, estadoAsignado } = req.body;
+  if (!empleadoId || !empresaId || !tipo || !estadoAsignado) {
+    return res.status(400).json({ error: 'Faltan datos del fichaje' });
+  }
+
+  const fichaje = {
+    empleadoId,
+    empresaId,
+    tipo,
+    timestamp: new Date(),
+    estadoAsignado
+  };
+
+  await db.collection('fichajes').insertOne(fichaje);
+  res.status(201).json({ mensaje: 'Fichaje registrado', fichaje });
+});
+
+startServer();
