@@ -1,4 +1,4 @@
-// ✅ backend/index.js (código completo con /api/empleados)
+// ✅ backend/index.js
 const express = require("express");
 const app = express();
 const cors = require("cors");
@@ -7,7 +7,17 @@ const bcrypt = require("bcrypt");
 const { MongoClient, ObjectId } = require("mongodb");
 require("dotenv").config();
 
-app.use(cors());
+// --- CORS configurado para GitHub Pages ---
+app.use(cors({
+  origin: ["https://stickershub1.github.io"], // Cambia "*" por tu dominio exacto en producción
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
+  credentials: false
+}));
+
+// Responder a todas las peticiones OPTIONS (preflight)
+app.options("*", cors());
+
 app.use(bodyParser.json());
 
 const uri = process.env.MONGODB_URI;
@@ -31,7 +41,7 @@ client.connect()
 
 // === ENDPOINTS PRINCIPALES ===
 
-// Registro de empresa
+// 1️⃣ Registro de empresa
 app.post("/api/empresas", async (req, res) => {
   const { nombre, email, password } = req.body;
   if (!nombre || !email || !password) {
@@ -51,7 +61,7 @@ app.post("/api/empresas", async (req, res) => {
   }
 });
 
-// Login de empresa
+// 2️⃣ Login de empresa
 app.post("/api/login-empresa", async (req, res) => {
   const { email, password } = req.body;
 
@@ -81,14 +91,13 @@ app.post("/api/login-empresa", async (req, res) => {
   }
 });
 
-// Registro de empleado
+// 3️⃣ Registro de empleado
 app.post("/api/empleados", async (req, res) => {
   const {
     nombre, edad, puesto, rango, horario,
     rol, estadoConexion, fichado, ultimoFichaje, empresaId
   } = req.body;
 
-  // Validación básica
   if (!nombre || !edad || !puesto || !rango || !horario || !empresaId) {
     return res.status(400).json({ error: "Faltan campos obligatorios" });
   }
@@ -101,19 +110,17 @@ app.post("/api/empleados", async (req, res) => {
   }
 
   try {
-    // Verifica que la empresa existe
     const empresaExiste = await db.collection("empresas").findOne({ _id: empresaObjectId });
     if (!empresaExiste) {
       return res.status(404).json({ error: "Empresa no encontrada" });
     }
 
-    // Inserta el empleado
     const resultado = await db.collection("empleados").insertOne({
       nombre,
       edad,
       puesto,
       rango,
-      horario, // { entrada, salida }
+      horario,
       rol: rol || "empleado",
       estadoConexion: estadoConexion || "inactivo",
       fichado: typeof fichado === "boolean" ? fichado : false,
