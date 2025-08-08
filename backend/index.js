@@ -237,3 +237,39 @@ app.post("/api/login-empleado", async (req, res) => {
     res.status(500).json({ error: "Error en el servidor" });
   }
 });
+
+// Listar empleados por empresa (con filtro y paginación básica)
+app.get("/api/empleados", async (req, res) => {
+  try {
+    const { empresaId, q = "", page = "1", limit = "50" } = req.query;
+    if (!empresaId) return res.status(400).json({ error: "empresaId requerido" });
+
+    let empresaObjectId;
+    try { empresaObjectId = new ObjectId(empresaId); }
+    catch { return res.status(400).json({ error: "empresaId inválido" }); }
+
+    const p = Math.max(1, parseInt(page, 10) || 1);
+    const l = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+
+    const filtro = { empresaId: empresaObjectId };
+    if (q && String(q).trim()) {
+      const rx = new RegExp(String(q).trim(), "i");
+      Object.assign(filtro, { $or: [{ nombre: rx }, { usuario: rx }, { puesto: rx }, { rango: rx }] });
+    }
+
+    const col = db.collection("empleados");
+    const total = await col.countDocuments(filtro);
+    const items = await col
+      .find(filtro, { projection: { password: 0 } })
+      .sort({ _id: -1 })
+      .skip((p - 1) * l)
+      .limit(l)
+      .toArray();
+
+    res.json({ total, page: p, limit: l, items });
+  } catch (err) {
+    console.error("Error listando empleados:", err);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
+
