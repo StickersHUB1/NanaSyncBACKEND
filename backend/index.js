@@ -1,4 +1,3 @@
-// ✅ backend/index.js
 const express = require("express");
 const app = express();
 const cors = require("cors");
@@ -7,41 +6,40 @@ const bcrypt = require("bcrypt");
 const { MongoClient, ObjectId } = require("mongodb");
 require("dotenv").config();
 
-// --- CORS configurado para GitHub Pages ---
-app.use(cors({
-  origin: ["https://stickershub1.github.io"], // Cambia "*" por tu dominio exacto en producción
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type"],
-  credentials: false
-}));
-
-// Responder a todas las peticiones OPTIONS (preflight)
-app.options("*", cors());
-
+app.use(cors());
 app.use(bodyParser.json());
 
 const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri);
 let db;
 
-client.connect()
-  .then(() => {
-    db = client.db();
-    console.log("🟢 Conexión a MongoDB exitosa");
+client.connect().then(() => {
+  db = client.db();
+  console.log("🟢 Conexión a MongoDB exitosa");
 
-    const port = process.env.PORT || 10000;
-    app.listen(port, () => {
-      console.log(`🟢 NanaSync API corriendo en puerto ${port}`);
-    });
-  })
-  .catch((err) => {
-    console.error("🔴 Error conectando a MongoDB:", err);
-    process.exit(1);
+  const port = process.env.PORT || 10000;
+  app.listen(port, () => {
+    console.log(`🟢 NanaSync API corriendo en puerto ${port}`);
   });
+});
+
+// === ENDPOINT DE LOGS DESDE EL FRONTEND ===
+app.post("/api/log", (req, res) => {
+  const { level, message, context } = req.body;
+  const logMsg = `[FRONTEND LOG] [${level.toUpperCase()}] ${message} ${context ? JSON.stringify(context) : ""}`;
+  if (level === "error") {
+    console.error(logMsg);
+  } else if (level === "warn") {
+    console.warn(logMsg);
+  } else {
+    console.log(logMsg);
+  }
+  res.json({ status: "ok" });
+});
 
 // === ENDPOINTS PRINCIPALES ===
 
-// 1️⃣ Registro de empresa
+// Registro de empresa
 app.post("/api/empresas", async (req, res) => {
   const { nombre, email, password } = req.body;
   if (!nombre || !email || !password) {
@@ -61,7 +59,7 @@ app.post("/api/empresas", async (req, res) => {
   }
 });
 
-// 2️⃣ Login de empresa
+// Login de empresa
 app.post("/api/login-empresa", async (req, res) => {
   const { email, password } = req.body;
 
@@ -91,44 +89,15 @@ app.post("/api/login-empresa", async (req, res) => {
   }
 });
 
-// 3️⃣ Registro de empleado
+// Alta de empleados
 app.post("/api/empleados", async (req, res) => {
-  const {
-    nombre, edad, puesto, rango, horario,
-    rol, estadoConexion, fichado, ultimoFichaje, empresaId
-  } = req.body;
-
-  if (!nombre || !edad || !puesto || !rango || !horario || !empresaId) {
-    return res.status(400).json({ error: "Faltan campos obligatorios" });
-  }
-
-  let empresaObjectId;
   try {
-    empresaObjectId = new ObjectId(empresaId);
-  } catch {
-    return res.status(400).json({ error: "empresaId no es un ObjectId válido" });
-  }
-
-  try {
-    const empresaExiste = await db.collection("empresas").findOne({ _id: empresaObjectId });
-    if (!empresaExiste) {
-      return res.status(404).json({ error: "Empresa no encontrada" });
+    const datos = req.body;
+    if (!datos.empresaId) {
+      return res.status(400).json({ error: "Falta ID de la empresa" });
     }
-
-    const resultado = await db.collection("empleados").insertOne({
-      nombre,
-      edad,
-      puesto,
-      rango,
-      horario,
-      rol: rol || "empleado",
-      estadoConexion: estadoConexion || "inactivo",
-      fichado: typeof fichado === "boolean" ? fichado : false,
-      ultimoFichaje: ultimoFichaje || null,
-      empresaId: empresaObjectId
-    });
-
-    res.json({ _id: resultado.insertedId, nombre });
+    const resultado = await db.collection("empleados").insertOne(datos);
+    res.json({ _id: resultado.insertedId });
   } catch (err) {
     console.error("Error registrando empleado:", err);
     res.status(500).json({ error: "Error interno del servidor" });
